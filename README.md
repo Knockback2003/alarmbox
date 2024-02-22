@@ -39,7 +39,7 @@ When you plug in the ESP8266, if you have installed LEDs, all LEDs should light 
 * You should now see an Config-Page with the minutes remaining of the Access Point is available.
 * Type in your configurations and press "Save" or "Speichern".
 * If the save process was successfull you should be redirected to a overwiev Page. Yes the data is clearly saved. You should not forward the port of the ESP8266 and use it only in your own private network.
-* If the data is correctly you can disconnect from the Wifi of the ESP and were done!
+* If the data is correctly you can disconnect from the Wifi of the ESP and were done! The Display should go off when the accespoint switches off or 10 min after inaktivity (such as no alarm)
 
 * In some cases you may have to unplug the ESP and then plug it back in for it to load the data.
 
