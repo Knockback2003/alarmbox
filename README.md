@@ -17,6 +17,14 @@ He's certainly not perfect.
 ## Installation
 
 * Flash the Code with Arduino IDE
+* Green LED PIN: 14
+* RED LED PIN: 12
+* BLUE LED PIN: 0
+* INPUT PORT: 2
+
+* The input port wroks as pushdown-resistor. The esp gets triggert, if the voltage from pin 2 fell down.
+
+* ! If you wont to youse it also for a Aribus P8GR you must connect Pin 2 to the left relay pin (on front view to the homestation) and the right relay pin to ground on the ESP !
 
 
 ## Configuration
