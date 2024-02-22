@@ -57,7 +57,7 @@ WiFiClient espClient2;
 PubSubClient client(espClient1);
 PubSubClient client2(espClient2);
 
-// Variables: Connections
+// Variables Connections
 bool wasWlanConnected = false;
 bool isWlanConnected = false;
 const char* wlanssid; 
