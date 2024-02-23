@@ -6,6 +6,9 @@ Since I couldn't find any comparable code, I thought I'd just make it available 
 He's certainly not perfect.
 
 
+<img src="https://github.com/Knockback2003/alarmbox/blob/main/pictures/1.jpg"  width="200" height="200">
+
+
 ## Requirements
 
 * ESP8266
