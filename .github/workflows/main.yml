@@ -25,14 +25,14 @@ jobs:
 
     - name: Compile sketch
       run: |
-        arduino-cli compile --fqbn esp8266:esp8266:generic release/your_sketch.ino
-        ls -la release
+        arduino-cli compile --fqbn esp8266:esp8266:generic build/sketch.ino
+        ls -la build
 
     - name: Create release directory if not exists
       run: mkdir -p release
 
     - name: Move compiled binary to release directory
-      run: mv release/build/esp8266.esp8266.generic/your_sketch.ino.bin release/sketch.bin
+      run: mv build/sketch.ino.bin release/sketch.bin
 
     - name: Commit and push binary
       run: |
