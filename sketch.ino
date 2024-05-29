@@ -13,8 +13,8 @@
 #include <Discord_WebHook.h>
 #include <Arduino.h>
 #include <U8g2lib.h>
-
 #include <ESP8266httpUpdate.h>
+
 
 // INTERNE ZEITEN
 unsigned long apStartTime = 0;
@@ -148,7 +148,12 @@ const unsigned long screenOffDelay = 600000;  // 10 Minuten in Millisekunden
 bool display_start = false;
 
 // GITHUB UPDATES
-const char* firmwareUrl = "https://raw.githubusercontent.com/knockback2003/alarmbox/main/release/sketch.bin";
+const char* firmware_url = "https://github.com/knockback2003/alarmbox/releases/latest/download/A_20.ino.bin";
+unsigned long previousMillis_updateCheck = 0;
+const long interval_updateCheck = 3600000;
+bool updateInProgress = false;
+int downloadProgress = 0;
+int installProgress = 0;
 
 
 class ConfigData {
@@ -182,6 +187,7 @@ public:
   String apPassword;
   bool mqtt1Secured;
   bool mqtt2Secured;
+  String firmwareVersion;
 
   ConfigData() {
     ssid = "";
@@ -213,6 +219,7 @@ public:
     apPassword = "Feuerwehr112";
     mqtt1Secured = false;
     mqtt2Secured = false;
+    firmwareVersion = "1.1.0";
   }
 
     bool operator!=(const ConfigData& other) const {
@@ -247,6 +254,7 @@ public:
             nightModeEndHour != other.nightModeEndHour ||
             nightModeEndMinute != other.nightModeEndMinute ||
             apSSID != other.apSSID ||
+            firmwareVersion != other.firmwareVersion ||
             apPassword != other.apPassword);
         }
 };
@@ -454,6 +462,8 @@ void handleConfig() {
     html += "<p>Access Point bleibt f&uuml;r " + String(apMinutesRemaining) + " Minuten ge&oumlffnet.</p>";
     html += "<form method='post' action='/save?token=" + String(server.arg("token")) + "'>";
 
+    html += "<p>Firmware Version: " + String(config.firmwareVersion) + "</p>";
+
     // WiFi
     html += "<label for='ssid'>WLAN SSID:</label><input type='text' name='ssid' value='" + config.ssid + "'><br>";
     html += "<label for='password'>WLAN Passwort:</label><input type='password' name='password' value='" + config.password + "'><br>";
@@ -623,6 +633,7 @@ void loadConfigFromFile() {
       config.nightModeEndMinute = jsonDoc["nightModeEndMinute"].as<int>();
       config.apSSID = jsonDoc["apSSID"].as<String>();
       config.apPassword = jsonDoc["apPassword"].as<String>();
+      config.firmwareVersion = jsonDoc["firmwareVersion"].as<String>();
       // Laden Sie weitere Konfigurationsdaten hier
     }
   } else {
@@ -674,6 +685,7 @@ void saveConfigToFile() {
     jsonDoc["nightModeEndMinute"] = config.nightModeEndMinute;
     jsonDoc["apSSID"] = config.apSSID;
     jsonDoc["apPassword"] = config.apPassword;
+    jsonDoc["firmwareVersion"] = config.firmwareVersion;
     // Speichern Sie weitere Konfigurationsdaten hier
 
     File configFile = SPIFFS.open("/config.json", "w");
@@ -926,6 +938,8 @@ void printIfEnabled(const char* name, bool enabled, const Values&... values) {
 void showConfig() {
   int startHour, startMinute, endHour, endMinute;
 
+  Serial.print("Firmware Version: ");
+  Serial.println(config.firmwareVersion.c_str());
   Serial.println("Aktuelle Konfiguration:");
   Serial.print("SSID: ");
   Serial.println(config.ssid);
@@ -983,10 +997,43 @@ void u8g2_prepare(void) {
   u8g2.setFontDirection(0);
 }
 
+void drawUpdateProgress(int progress) {
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_helvR10_tf);
+  u8g2.setCursor(0, 10);
+  u8g2.print("Downloading update...");
+  u8g2.setCursor(0, 30);
+  u8g2.print("Progress: ");
+  u8g2.print(progress);
+  u8g2.print("%");
+  u8g2.sendBuffer();
+}
+
+void drawInstallProgress(int progress) {
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_helvR10_tf);
+  u8g2.setCursor(0, 10);
+  u8g2.print("Installing update...");
+  u8g2.setCursor(0, 30);
+  u8g2.print("Progress: ");
+  u8g2.print(progress);
+  u8g2.print("%");
+  u8g2.sendBuffer();
+}
+
 void u8g2_draw(void) {
   currentTime = millis();
   u8g2_prepare();
   u8g2.clearBuffer();
+
+  if (updateInProgress) {
+    if (downloadProgress < 100) {
+      drawUpdateProgress(downloadProgress);
+    } else if (installProgress < 100) {
+      drawInstallProgress(installProgress);
+    }
+    return;
+  }
 
   if (!display_start) {
     u8g2.firstPage();
@@ -1000,6 +1047,14 @@ void u8g2_draw(void) {
       int textX = (frameWidth - textWidth) / 2 + 5;
       int textY = 6 + (frameHeight - textHeight) / 2 + textHeight / 2 - 1;
       u8g2.drawStr(textX, textY, "Start");
+
+      u8g2.setFont(u8g2_font_helvR10_tf);
+      int keyWidth = u8g2.getStrWidth("0.0.0");
+      int keyHeight = u8g2.getAscent();
+      int versionX = (frameWidth - keyWidth) / 2 + 5;
+      int versionY = 10 + frameHeight - keyHeight + 4;
+      u8g2.drawStr(versionX, versionY, config.firmwareVersion.c_str());
+
       display_start = true;
     } while (u8g2.nextPage());
   } else if (inAPMode || dualModeActive && !alarm) {
@@ -1079,26 +1134,73 @@ void u8g2_draw(void) {
        u8g2.setPowerSave(1);
      }
   }
+}
 
+String getLatestFirmwareVersion() {
+  String latestVersion = "";
 
+  const char* githubApiUrl = "https://api.github.com/repos/username/repo/releases/latest";
+
+  const char* githubUsername = "knockback2003";
+  const char* githubRepo = "alarmbox";
+
+  // Erstellen Sie die URL für die GitHub-Releases-API-Anfrage
+  String apiUrl = String(githubApiUrl);
+  apiUrl.replace("username", githubUsername);
+  apiUrl.replace("repo", githubRepo);
+
+  // Führen Sie die Anfrage an die GitHub-API durch
+  HTTPClient http;
+  http.begin(espClient1, apiUrl.c_str());
+
+  int httpCode = http.GET();
+  if (httpCode > 0) {
+    // Lesen Sie die Antwort der GitHub-API und extrahieren Sie die Versionsnummer
+    String payload = http.getString();
+    DynamicJsonDocument doc(1024);
+    deserializeJson(doc, payload);
+    const char* tag_name = doc["tag_name"];
+    if (tag_name) {
+      latestVersion = tag_name;
+    }
+  }
+
+  http.end();
+  return latestVersion;
 }
 
 void checkForUpdates() {
-  WiFiClient client;
-  t_httpUpdate_return ret = ESPhttpUpdate.update(client, firmwareUrl);
+  Serial.println("Checking for firmware updates...");
+  String latestVersion = getLatestFirmwareVersion();
 
-  switch(ret) {
-    case HTTP_UPDATE_FAILED:
-      Serial.printf("HTTP_UPDATE_FAILED Error (%d): %s\n", ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
-      break;
+  // Vergleichen der Versionsnummern
+  if (latestVersion > config.firmwareVersion) {
+    Serial.println("New firmware available. Updating...");
+    updateInProgress = true;
+    t_httpUpdate_return ret = ESPhttpUpdate.update(espClient1, firmware_url);
 
-    case HTTP_UPDATE_NO_UPDATES:
-      Serial.println("HTTP_UPDATE_NO_UPDATES");
-      break;
+    switch (ret) {
+      case HTTP_UPDATE_FAILED:
+        Serial.printf("Update failed. Error (%d): %s\n", 
+          ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
+        updateInProgress = false;
+        break;
 
-    case HTTP_UPDATE_OK:
-      Serial.println("HTTP_UPDATE_OK");
-      break;
+      case HTTP_UPDATE_NO_UPDATES:
+        Serial.println("No updates available.");
+        updateInProgress = false;
+        break;
+
+      case HTTP_UPDATE_OK:
+        Serial.println("Update successful.");
+        updateInProgress = false;
+        config.firmwareVersion = latestVersion;
+        saveConfigToFile();
+        ESP.restart();
+        break;
+    }
+  } else {
+    Serial.println("No new firmware available.");
   }
 }
 
@@ -1112,11 +1214,6 @@ void setup() {
   delay(100);
   randomNumber = random(1234, 9999);
   validToken = generateToken();
-
-  // Display
-  u8g2.begin();
-  u8g2.setPowerSave(0);
-  u8g2_draw();
 
   currentTime = millis();
 
@@ -1144,6 +1241,12 @@ void setup() {
   }
 
   delay(4000);
+
+  // Display
+  u8g2.begin();
+  u8g2.setPowerSave(0);
+  u8g2_draw();
+
   showConfig();
 
   // Überprüfen, ob SSID und Passwort vorhanden sind
@@ -1330,7 +1433,10 @@ void loop() {
   updateLedDisplay();
 
   // Prüfen auf Updates
-  checkForUpdates();
+  if (currentTime - previousMillis_updateCheck >= interval_updateCheck) {
+    previousMillis_updateCheck = currentTime;
+    checkForUpdates();
+  }
 
   // Zeit für die Wiederholung des Loops hinzufügen
   delay(1000);
