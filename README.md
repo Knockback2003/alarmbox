@@ -100,11 +100,15 @@ When you plug in the ESP8266, if you have installed LEDs, all LEDs should light 
 * In some rare cases the ESP makes a soft restart after he switch the AP Mode off.
 
 
-## Future
-
+## Version 1.0.0
 * Fix Bugs
-* Make Config Page more asthetic
 * MQTT 1 / 2 opinion to use Username/Password
+
+
+## Future
+* OTA via GitHub Repository
+* Make Config Page more asthetic
+
 
 
 (This is/was a hobby project from 2023 what is published 2024. Im NOT a professioal programmer. The Code works for me perfect with high reliability)
